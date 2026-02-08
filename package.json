@@ -1,0 +1,5 @@
+{
+  "name": "claude-relay",
+  "private": true,
+  "workspaces": ["daemon", "mobile"]
+}
