@@ -1,12 +1,15 @@
 import type { FastifyInstance } from "fastify";
 import type { SessionDiscovery } from "../sessions/discovery.js";
 import type { TmuxManager } from "../tmux/manager.js";
+import type { TerminalBridge } from "../terminal/bridge.js";
+import { isValidSessionId } from "../auth.js";
 import { basename } from "node:path";
 
 export function registerSessionRoutes(
   app: FastifyInstance,
   discovery: SessionDiscovery,
   tmuxManager: TmuxManager,
+  bridge: TerminalBridge,
 ): void {
   // GET /api/sessions — list all sessions
   app.get("/api/sessions", async () => {
@@ -46,6 +49,15 @@ export function registerSessionRoutes(
   app.get<{ Params: { id: string } }>(
     "/api/sessions/:id",
     async (request, reply) => {
+      if (!isValidSessionId(request.params.id)) {
+        reply.code(400).send({
+          error: "INVALID_SESSION_ID",
+          message: "Session ID must be a valid UUID",
+          action: "Check the session ID format",
+        });
+        return;
+      }
+
       const session = discovery.getSession(request.params.id);
       if (!session) {
         reply.code(404).send({
@@ -77,7 +89,7 @@ export function registerSessionRoutes(
         timestamp: session.timestamp.toISOString(),
         cliVersion: session.cliVersion,
         tmuxStatus,
-        hasActiveConnection: tmuxManager.hasActiveConnection(session.id),
+        hasActiveConnection: bridge.hasActiveTerminal(session.id),
       };
     },
   );

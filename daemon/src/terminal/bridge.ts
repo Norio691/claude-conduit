@@ -1,7 +1,6 @@
 import type { WebSocket } from "ws";
 import type { FastifyBaseLogger } from "fastify";
 import type { RelayConfig } from "../config.js";
-import type { TmuxManager } from "../tmux/manager.js";
 
 // node-pty uses CommonJS — need dynamic import
 let ptyModule: typeof import("node-pty") | null = null;
@@ -17,38 +16,36 @@ interface ActiveTerminal {
   sessionId: string;
   ws: WebSocket;
   createdAt: Date;
+  cleanedUp: boolean;
 }
 
 const BACKPRESSURE_THRESHOLD = 64 * 1024; // 64KB
+const OUTPUT_BUFFER_MAX = 1024 * 1024; // 1MB cap
 const BATCH_INTERVAL_MS = 16; // ~60fps
 
 export class TerminalBridge {
   private log: FastifyBaseLogger;
   private config: RelayConfig;
-  private tmuxManager: TmuxManager;
   private terminals = new Map<string, ActiveTerminal>();
   private reapTimer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(config: RelayConfig, tmuxManager: TmuxManager, log: FastifyBaseLogger) {
+  constructor(config: RelayConfig, log: FastifyBaseLogger) {
     this.log = log.child({ module: "terminal" });
     this.config = config;
-    this.tmuxManager = tmuxManager;
   }
 
   start(): void {
-    // Reap orphaned pty processes every 60s
     this.reapTimer = setInterval(() => this.reapOrphans(), 60_000);
   }
 
   stop(): void {
     if (this.reapTimer) clearInterval(this.reapTimer);
-    // Kill all active terminals
     for (const [id, terminal] of this.terminals) {
       this.cleanupTerminal(id, terminal);
     }
   }
 
-  /** Check if a session has an active terminal. */
+  /** Check if a session has an active terminal — single source of truth. */
   hasActiveTerminal(sessionId: string): boolean {
     return this.terminals.has(sessionId);
   }
@@ -64,7 +61,6 @@ export class TerminalBridge {
     cols: number,
     rows: number,
   ): Promise<void> {
-    // Refuse if already active
     if (this.terminals.has(sessionId)) {
       ws.close(4409, "Session already has an active terminal connection");
       return;
@@ -85,10 +81,10 @@ export class TerminalBridge {
       sessionId,
       ws,
       createdAt: new Date(),
+      cleanedUp: false,
     };
 
     this.terminals.set(sessionId, terminal);
-    this.tmuxManager.markAttached(sessionId);
 
     this.log.info(
       { sessionId, tmuxSession, pid: ptyProcess.pid, cols, rows },
@@ -97,45 +93,58 @@ export class TerminalBridge {
 
     // Output batching for backpressure control
     let outputBuffer: Buffer[] = [];
+    let outputBufferSize = 0;
     let batchTimer: ReturnType<typeof setTimeout> | null = null;
 
+    const clearBatchTimer = (): void => {
+      if (batchTimer) {
+        clearTimeout(batchTimer);
+        batchTimer = null;
+      }
+    };
+
     const flushOutput = (): void => {
+      batchTimer = null;
       if (outputBuffer.length === 0) return;
       if (ws.readyState !== ws.OPEN) return;
 
-      // Check backpressure
+      // Check backpressure — retry later if buffer full
       if (ws.bufferedAmount > BACKPRESSURE_THRESHOLD) {
-        // Retry on next tick
         batchTimer = setTimeout(flushOutput, BATCH_INTERVAL_MS);
         return;
       }
 
       const combined = Buffer.concat(outputBuffer);
       outputBuffer = [];
+      outputBufferSize = 0;
       ws.send(combined);
     };
 
     // PTY → WS (binary)
     ptyProcess.onData((data: string) => {
-      outputBuffer.push(Buffer.from(data, "utf-8"));
+      const buf = Buffer.from(data, "utf-8");
+
+      // Cap output buffer to prevent unbounded growth
+      if (outputBufferSize + buf.length > OUTPUT_BUFFER_MAX) {
+        // Drop oldest data
+        outputBuffer = [];
+        outputBufferSize = 0;
+      }
+
+      outputBuffer.push(buf);
+      outputBufferSize += buf.length;
+
       if (!batchTimer) {
-        batchTimer = setTimeout(() => {
-          batchTimer = null;
-          flushOutput();
-        }, BATCH_INTERVAL_MS);
+        batchTimer = setTimeout(flushOutput, BATCH_INTERVAL_MS);
       }
     });
 
-    // PTY exit
+    // PTY exit — cleanup including SIGKILL escalation
     ptyProcess.onExit(({ exitCode, signal }) => {
-      this.log.info(
-        { sessionId, exitCode, signal },
-        "PTY process exited",
-      );
-      if (batchTimer) clearTimeout(batchTimer);
-      flushOutput(); // Flush remaining output
-      this.terminals.delete(sessionId);
-      this.tmuxManager.markDetached(sessionId);
+      this.log.info({ sessionId, exitCode, signal }, "PTY process exited");
+      clearBatchTimer();
+      flushOutput();
+      this.cleanupTerminal(sessionId, terminal);
 
       if (ws.readyState === ws.OPEN) {
         ws.close(1000, "Terminal session ended");
@@ -158,7 +167,6 @@ export class TerminalBridge {
               "Terminal resized",
             );
           }
-          // Heartbeat: just acknowledge
         } catch {
           // Malformed control message — ignore
         }
@@ -171,74 +179,65 @@ export class TerminalBridge {
     // WS close / error → cleanup PTY
     ws.on("close", () => {
       this.log.info({ sessionId }, "WebSocket closed, cleaning up PTY");
-      if (batchTimer) clearTimeout(batchTimer);
+      clearBatchTimer();
       this.cleanupTerminal(sessionId, terminal);
     });
 
     ws.on("error", (err) => {
       this.log.error({ err, sessionId }, "WebSocket error");
-      if (batchTimer) clearTimeout(batchTimer);
+      clearBatchTimer();
       this.cleanupTerminal(sessionId, terminal);
     });
 
-    // Heartbeat (ping/pong)
+    // Heartbeat: send ping, increment missed counter.
+    // Reset on pong. Disconnect if too many missed.
+    let missedPongs = 0;
     const heartbeatInterval = setInterval(() => {
-      if (ws.readyState === ws.OPEN) {
-        ws.ping();
-      } else {
+      if (ws.readyState !== ws.OPEN) {
         clearInterval(heartbeatInterval);
+        return;
       }
+      missedPongs++;
+      if (missedPongs > this.config.rateLimit.wsMaxMissedPongs) {
+        this.log.warn({ sessionId, missedPongs }, "Too many missed pongs, closing");
+        clearInterval(heartbeatInterval);
+        ws.terminate();
+        return;
+      }
+      ws.ping();
     }, this.config.rateLimit.wsHeartbeat * 1000);
 
-    let missedPongs = 0;
     ws.on("pong", () => {
       missedPongs = 0;
     });
 
-    const pongCheckInterval = setInterval(() => {
-      if (ws.readyState !== ws.OPEN) {
-        clearInterval(pongCheckInterval);
-        return;
-      }
-      missedPongs++;
-      if (missedPongs >= this.config.rateLimit.wsMaxMissedPongs) {
-        this.log.warn({ sessionId, missedPongs }, "Too many missed pongs, closing");
-        clearInterval(pongCheckInterval);
-        ws.terminate();
-      }
-    }, this.config.rateLimit.wsHeartbeat * 1000);
-
-    // Clean up intervals on close
     ws.on("close", () => {
       clearInterval(heartbeatInterval);
-      clearInterval(pongCheckInterval);
     });
   }
 
   private cleanupTerminal(sessionId: string, terminal: ActiveTerminal): void {
-    // Only cleanup if this is still the active terminal for this session
+    // Idempotent — only clean up once
+    if (terminal.cleanedUp) return;
     if (this.terminals.get(sessionId) !== terminal) return;
 
+    terminal.cleanedUp = true;
     this.terminals.delete(sessionId);
-    this.tmuxManager.markDetached(sessionId);
 
+    const pid = terminal.pty.pid;
     try {
       terminal.pty.kill();
-      this.log.debug(
-        { sessionId, pid: terminal.pty.pid },
-        "PTY process killed",
-      );
+      this.log.debug({ sessionId, pid }, "PTY process killed (SIGTERM)");
     } catch {
       // Already dead
     }
 
     // Escalate to SIGKILL after 5s if still alive
-    const pid = terminal.pty.pid;
     setTimeout(() => {
       try {
         process.kill(pid, 0); // Check if alive
         process.kill(pid, "SIGKILL");
-        this.log.warn({ sessionId, pid }, "Force-killed PTY process");
+        this.log.warn({ sessionId, pid }, "Force-killed PTY process (SIGKILL)");
       } catch {
         // Already dead — good
       }
@@ -248,10 +247,7 @@ export class TerminalBridge {
   private reapOrphans(): void {
     for (const [sessionId, terminal] of this.terminals) {
       const ws = terminal.ws;
-      if (
-        ws.readyState === ws.CLOSED ||
-        ws.readyState === ws.CLOSING
-      ) {
+      if (ws.readyState === ws.CLOSED || ws.readyState === ws.CLOSING) {
         this.log.warn({ sessionId }, "Reaping orphaned terminal (WS dead)");
         this.cleanupTerminal(sessionId, terminal);
       }

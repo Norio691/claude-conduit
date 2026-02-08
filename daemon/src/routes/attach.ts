@@ -3,21 +3,40 @@ import type { SessionDiscovery } from "../sessions/discovery.js";
 import type { TmuxManager } from "../tmux/manager.js";
 import { SessionConflictError } from "../tmux/manager.js";
 import type { TerminalBridge } from "../terminal/bridge.js";
+import type { AttachTokens } from "../auth.js";
+import { isValidSessionId } from "../auth.js";
 
-// Rate limit: track last attach time per session
+// Rate limit: track last attach time per session, prune periodically
 const lastAttachTime = new Map<string, number>();
+setInterval(() => {
+  const cutoff = Date.now() - 60_000;
+  for (const [id, time] of lastAttachTime) {
+    if (time < cutoff) lastAttachTime.delete(id);
+  }
+}, 60_000);
 
 export function registerAttachRoutes(
   app: FastifyInstance,
   discovery: SessionDiscovery,
   tmuxManager: TmuxManager,
   bridge: TerminalBridge,
+  attachTokens: AttachTokens,
 ): void {
   // POST /api/sessions/:id/attach — create/attach tmux session
   app.post<{ Params: { id: string } }>(
     "/api/sessions/:id/attach",
     async (request, reply) => {
       const sessionId = request.params.id;
+
+      // Validate session ID format
+      if (!isValidSessionId(sessionId)) {
+        reply.code(400).send({
+          error: "INVALID_SESSION_ID",
+          message: "Session ID must be a valid UUID",
+          action: "Check the session ID format",
+        });
+        return;
+      }
 
       // Verify session exists
       const session = discovery.getSession(sessionId);
@@ -50,10 +69,14 @@ export function registerAttachRoutes(
           result.existed ? "detached" : "none",
         );
 
+        // Generate single-use attach token for the WS connection
+        const token = attachTokens.generate(sessionId);
+
         return {
           wsUrl: `/terminal/${sessionId}`,
           tmuxSession: result.tmuxSession,
           existed: result.existed,
+          attachToken: token,
         };
       } catch (err) {
         if (err instanceof SessionConflictError) {

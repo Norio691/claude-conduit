@@ -1,5 +1,6 @@
 import { watch } from "chokidar";
-import { readFileSync, statSync, existsSync, mkdirSync, writeFileSync, openSync, readSync, closeSync } from "node:fs";
+import { readFileSync, statSync, existsSync, mkdirSync, openSync, readSync, closeSync } from "node:fs";
+import { writeFile, mkdir } from "node:fs/promises";
 import { readdir } from "node:fs/promises";
 import { join, basename, dirname } from "node:path";
 import type { FastifyBaseLogger } from "fastify";
@@ -131,6 +132,7 @@ export class SessionDiscovery {
             sessionId,
             projectHash,
             stat.mtimeMs,
+            stat.size,
           );
           if (metadata) {
             // Preserve tmux status from existing entry
@@ -184,6 +186,7 @@ export class SessionDiscovery {
         sessionId,
         projectHash,
         stat.mtimeMs,
+        stat.size,
       );
       if (metadata) {
         const existing = this.sessions.get(sessionId);
@@ -211,9 +214,9 @@ export class SessionDiscovery {
     sessionId: string,
     projectHash: string,
     mtimeMs: number,
+    fileSize: number,
   ): SessionMetadata | null {
-    const stat = statSync(filePath);
-    if (stat.size === 0) return null;
+    if (fileSize === 0) return null;
 
     let projectPath = "";
     let cliVersion = "";
@@ -235,7 +238,7 @@ export class SessionDiscovery {
     }
 
     // Parse tail for last message
-    const tailLines = this.readTailLines(filePath, stat.size);
+    const tailLines = this.readTailLines(filePath, fileSize);
     for (let i = tailLines.length - 1; i >= 0; i--) {
       try {
         const parsed = JSON.parse(tailLines[i]) as JsonlUserMessage;
@@ -384,31 +387,34 @@ export class SessionDiscovery {
   }
 
   private saveCache(): void {
-    try {
-      if (!existsSync(CONFIG_DIR)) {
-        mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
-      }
-
-      const cache: SessionCache = {
-        version: 1,
-        entries: Array.from(this.sessions.values()).map((s) => ({
-          id: s.id,
-          projectPath: s.projectPath,
-          projectHash: s.projectHash,
-          lastMessagePreview: s.lastMessagePreview,
-          lastMessageRole: s.lastMessageRole,
-          timestamp: s.timestamp.toISOString(),
-          cliVersion: s.cliVersion,
-          mtimeMs: 0,
-        })),
-        lastFullScan: new Date().toISOString(),
-      };
-
-      writeFileSync(CACHE_PATH, JSON.stringify(cache, null, 2), {
-        mode: 0o600,
-      });
-    } catch (err) {
+    // Fire-and-forget async write to avoid blocking event loop
+    this.saveCacheAsync().catch((err) => {
       this.log.warn({ err }, "Failed to save session cache");
+    });
+  }
+
+  private async saveCacheAsync(): Promise<void> {
+    if (!existsSync(CONFIG_DIR)) {
+      await mkdir(CONFIG_DIR, { recursive: true, mode: 0o700 });
     }
+
+    const cache: SessionCache = {
+      version: 1,
+      entries: Array.from(this.sessions.values()).map((s) => ({
+        id: s.id,
+        projectPath: s.projectPath,
+        projectHash: s.projectHash,
+        lastMessagePreview: s.lastMessagePreview,
+        lastMessageRole: s.lastMessageRole,
+        timestamp: s.timestamp.toISOString(),
+        cliVersion: s.cliVersion,
+        mtimeMs: 0,
+      })),
+      lastFullScan: new Date().toISOString(),
+    };
+
+    await writeFile(CACHE_PATH, JSON.stringify(cache, null, 2), {
+      mode: 0o600,
+    });
   }
 }

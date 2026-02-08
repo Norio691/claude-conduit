@@ -7,30 +7,23 @@ import { SessionLock } from "./lock.js";
 
 const exec = promisify(execFile);
 
+// Use tab as delimiter since it cannot appear in tmux session names
+const TMUX_DELIM = "\t";
+
 export class TmuxManager {
   private log: FastifyBaseLogger;
   private config: RelayConfig;
   private lock = new SessionLock();
-  private activeAttachments = new Set<string>(); // session IDs with active WS
+  private isConnected: (sessionId: string) => boolean;
 
-  constructor(config: RelayConfig, log: FastifyBaseLogger) {
+  constructor(
+    config: RelayConfig,
+    log: FastifyBaseLogger,
+    isConnected: (sessionId: string) => boolean,
+  ) {
     this.log = log.child({ module: "tmux" });
     this.config = config;
-  }
-
-  /** Mark a session as having an active WS terminal connection. */
-  markAttached(sessionId: string): void {
-    this.activeAttachments.add(sessionId);
-  }
-
-  /** Mark a session as no longer having a WS terminal connection. */
-  markDetached(sessionId: string): void {
-    this.activeAttachments.delete(sessionId);
-  }
-
-  /** Check if a session has an active WS terminal connection. */
-  hasActiveConnection(sessionId: string): boolean {
-    return this.activeAttachments.has(sessionId);
+    this.isConnected = isConnected;
   }
 
   /**
@@ -42,8 +35,8 @@ export class TmuxManager {
     existed: boolean;
   }> {
     return this.lock.acquire(sessionId, async () => {
-      // Check 1: Already has an active WS connection
-      if (this.activeAttachments.has(sessionId)) {
+      // Check 1: Already has an active WS connection (bridge is source of truth)
+      if (this.isConnected(sessionId)) {
         throw new SessionConflictError(
           "SESSION_ATTACHED",
           "Already connected from another device",
@@ -65,7 +58,6 @@ export class TmuxManager {
         s.name.startsWith("claude-"),
       );
       if (claudeSessions.length >= this.config.claude.maxSessions) {
-        // Check if this session already has a tmux session (don't count it against limit)
         const tmuxName = this.tmuxName(sessionId);
         const existing = claudeSessions.find((s) => s.name === tmuxName);
         if (!existing) {
@@ -97,7 +89,7 @@ export class TmuxManager {
       const { stdout } = await exec("tmux", [
         "list-sessions",
         "-F",
-        "#{session_name}:#{session_attached}:#{session_created}",
+        `#{session_name}${TMUX_DELIM}#{session_attached}${TMUX_DELIM}#{session_created}`,
       ]);
 
       return stdout
@@ -105,15 +97,14 @@ export class TmuxManager {
         .split("\n")
         .filter((l) => l.length > 0)
         .map((line) => {
-          const [name, attached, created] = line.split(":");
+          const parts = line.split(TMUX_DELIM);
           return {
-            name,
-            attached: attached === "1",
-            created: new Date(parseInt(created, 10) * 1000),
+            name: parts[0],
+            attached: parts[1] === "1",
+            created: new Date(parseInt(parts[2], 10) * 1000),
           };
         });
     } catch {
-      // tmux not running = no sessions
       return [];
     }
   }
@@ -141,8 +132,15 @@ export class TmuxManager {
     }
   }
 
-  /** Reconcile on daemon startup: discover existing tmux sessions. */
+  /** Reconcile on daemon startup: discover existing tmux sessions and kill orphaned PTYs. */
   async reconcile(): Promise<string[]> {
+    try {
+      await exec("pkill", ["-f", "tmux attach-session -t claude-"]);
+      this.log.info("Killed orphaned tmux attach processes from previous daemon");
+    } catch {
+      // No matching processes — good
+    }
+
     const claudeSessions = await this.listClaudeSessions();
     const ids = claudeSessions.map((s) => s.sessionId);
     if (ids.length > 0) {
@@ -154,7 +152,7 @@ export class TmuxManager {
     return ids;
   }
 
-  private tmuxName(sessionId: string): string {
+  tmuxName(sessionId: string): string {
     return `claude-${sessionId}`;
   }
 
@@ -186,14 +184,13 @@ export class TmuxManager {
 
   private async isClaudeRunning(sessionId: string): Promise<boolean> {
     try {
-      // Check for claude process with this session ID
+      const escaped = sessionId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const { stdout } = await exec("pgrep", [
         "-f",
-        `claude.*--resume.*${sessionId}`,
+        `claude.*--resume.*${escaped}`,
       ]);
       return stdout.trim().length > 0;
     } catch {
-      // pgrep exits 1 when no match
       return false;
     }
   }

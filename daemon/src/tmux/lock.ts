@@ -1,32 +1,42 @@
-/** Per-session mutex to serialize attach operations. */
+/**
+ * Per-session mutex using promise chaining.
+ * Each acquire() appends to the chain — no gap between releases.
+ */
 export class SessionLock {
-  private locks = new Map<string, Promise<void>>();
+  private chains = new Map<string, Promise<void>>();
 
   async acquire<T>(sessionId: string, fn: () => Promise<T>): Promise<T> {
-    // Wait for any existing operation on this session
-    const existing = this.locks.get(sessionId);
-    if (existing) {
-      await existing;
-    }
+    const prev = this.chains.get(sessionId) ?? Promise.resolve();
 
     let resolve: () => void;
-    const promise = new Promise<void>((r) => {
+    const next = new Promise<void>((r) => {
       resolve = r;
     });
-    this.locks.set(sessionId, promise);
+
+    // Chain: our work starts after prev finishes
+    const work = prev.then(async () => {
+      try {
+        return await fn();
+      } finally {
+        resolve!();
+      }
+    });
+
+    // Register our completion promise as the tail of the chain
+    // Use .catch(() => {}) so a rejected promise doesn't block the next waiter
+    this.chains.set(sessionId, next.catch(() => {}));
 
     try {
-      return await fn();
+      return await work;
     } finally {
-      resolve!();
-      // Only delete if this is still our lock
-      if (this.locks.get(sessionId) === promise) {
-        this.locks.delete(sessionId);
+      // Clean up if we're the last in the chain
+      if (this.chains.get(sessionId) === next) {
+        this.chains.delete(sessionId);
       }
     }
   }
 
   isLocked(sessionId: string): boolean {
-    return this.locks.has(sessionId);
+    return this.chains.has(sessionId);
   }
 }
