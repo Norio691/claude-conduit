@@ -10,6 +10,11 @@ Claude Relay runs a lightweight daemon on your Mac that discovers all your Claud
 - Type a quick reply or hit Enter when Claude is waiting for input
 - Kill a runaway session without going back to your desk
 
+## Screenshots
+
+<!-- TODO: Add screenshots of the app in action -->
+*Screenshots coming soon — session list, terminal view, and iPad split view.*
+
 ## How It Works
 
 ```
@@ -145,6 +150,35 @@ After changing config, restart the daemon:
 npm run restart-service
 ```
 
+## Building the Mobile App
+
+The mobile app is a React Native iOS project. You'll need:
+
+- **Xcode 15+** (from the Mac App Store)
+- **CocoaPods** (`sudo gem install cocoapods`)
+- **Ruby** (macOS ships with it)
+
+```bash
+cd mobile
+npm install
+cd ios && pod install && cd ..
+```
+
+### Run on Simulator
+
+```bash
+npx react-native run-ios --simulator="iPhone 16"
+```
+
+### Run on Device
+
+1. Open `mobile/ios/ClaudeRelay.xcworkspace` in Xcode
+2. Select your device as the build target
+3. You may need to set a development team in Signing & Capabilities
+4. Build and run (Cmd+R)
+
+On the setup screen, enter your Mac's IP and PSK. If your phone is on the same Wi-Fi as your Mac, use your Mac's local IP (e.g., `192.168.1.x:7860`).
+
 ## Development
 
 ```bash
@@ -210,6 +244,10 @@ npm run restart-service
 **No sessions showing:**
 - Claude Code must have been used at least once (creates JSONL files in `~/.claude/projects/`)
 - Check session count: `curl -H "Authorization: Bearer <psk>" http://localhost:7860/api/sessions | python3 -c "import sys,json; print(len(json.load(sys.stdin)))"`
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
 
 ## License
 

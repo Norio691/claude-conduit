@@ -16,3 +16,14 @@ dist/
 
 # Config with secrets
 config.yaml
+
+# Ruby bundler (CocoaPods)
+mobile/.bundle/
+
+# Xcode
+*.xcuserdata
+mobile/ios/build/
+DerivedData/
+
+# React Native
+mobile/ios/Pods/
