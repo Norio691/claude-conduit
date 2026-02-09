@@ -10,10 +10,11 @@ Claude Relay runs a lightweight daemon on your Mac that discovers all your Claud
 - Type a quick reply or hit Enter when Claude is waiting for input
 - Kill a runaway session without going back to your desk
 
-## Screenshots
+## Demo
 
-<!-- TODO: Add screenshots of the app in action -->
-*Screenshots coming soon — session list, terminal view, and iPad split view.*
+<video src="assets/demo.mp4" width="300" autoplay loop muted playsinline></video>
+
+*Setup, session list, and terminal view on iPhone.*
 
 ## How It Works
 

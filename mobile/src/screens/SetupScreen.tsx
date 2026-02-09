@@ -23,7 +23,7 @@ interface CheckItem {
 
 export function SetupScreen() {
   const { configure } = useConnectionStore();
-  const [host, setHost] = useState('100.64.0.9:7860');
+  const [host, setHost] = useState('');
   const [psk, setPsk] = useState('');
   const [checks, setChecks] = useState<CheckItem[]>([
     { label: 'Mac reachable', status: 'pending' },
@@ -127,7 +127,7 @@ export function SetupScreen() {
             style={styles.input}
             value={host}
             onChangeText={setHost}
-            placeholder="100.64.0.9:7860"
+            placeholder="192.168.1.x:7860"
             placeholderTextColor={colors.textMuted}
             autoCapitalize="none"
             autoCorrect={false}
